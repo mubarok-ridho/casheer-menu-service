@@ -1,43 +1,29 @@
 package models
 
 import (
-    "time"
-    "gorm.io/gorm"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 type Menu struct {
-    ID           uint           `gorm:"primarykey" json:"id"`
-    TenantID     uint           `json:"tenant_id"`
-    CategoryID   uint           `json:"category_id"`
-    Name         string         `json:"name"`
-    Description  string         `json:"description"`
-    BasePrice    float64        `json:"base_price"`
-    IsAvailable  bool           `json:"is_available" gorm:"default:true"`
-    CreatedAt    time.Time      `json:"created_at"`
-    UpdatedAt    time.Time      `json:"updated_at"`
-    DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
-    Category     Category       `json:"category,omitempty"`
-    Variations   []MenuVariation `json:"variations,omitempty"`
-    Images       []MenuImage    `json:"images,omitempty"`
-    OrderCount   int64          `json:"order_count" gorm:"-:all"` // Untuk best seller
-}
+	ID          uint           `gorm:"primarykey" json:"id"`
+	TenantID    uint           `json:"tenant_id" gorm:"not null;index"`
+	CategoryID  uint           `json:"category_id" gorm:"not null"`
+	Name        string         `json:"name" gorm:"not null"`
+	Description string         `json:"description"`
+	BasePrice   float64        `json:"base_price" gorm:"not null"`
+	IsAvailable bool           `json:"is_available" gorm:"default:true"`
+	PrepTime    int            `json:"prep_time"` // in minutes
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
-type MenuVariation struct {
-    ID        uint    `gorm:"primarykey" json:"id"`
-    MenuID    uint    `json:"menu_id"`
-    Name      string  `json:"name"` // Contoh: "Ukuran", "Level Pedas"
-    Option    string  `json:"option"` // Contoh: "Sedang", "Extra Hot"
-    Price     float64 `json:"price"` // Additional price
-    Stock     int     `json:"stock" gorm:"default:0"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-}
+	// Relations
+	Category   Category        `json:"category,omitempty"`
+	Variations []MenuVariation `json:"variations,omitempty"`
+	Images     []MenuImage     `json:"images,omitempty"`
 
-type MenuImage struct {
-    ID        uint   `gorm:"primarykey" json:"id"`
-    MenuID    uint   `json:"menu_id"`
-    ImageURL  string `json:"image_url"`
-    PublicID  string `json:"public_id"` // Untuk Cloudinary
-    IsPrimary bool   `json:"is_primary" gorm:"default:false"`
-    CreatedAt time.Time `json:"created_at"`
+	// Calculated fields (not in DB)
+	OrderCount int64 `json:"order_count" gorm:"-"`
 }

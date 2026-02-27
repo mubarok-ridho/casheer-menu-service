@@ -10,11 +10,14 @@ import (
 )
 
 func UploadToCloudinary(file *multipart.FileHeader, folder string) (string, string, error) {
-	cld, _ := cloudinary.NewFromParams(
+	cld, err := cloudinary.NewFromParams(
 		os.Getenv("CLOUDINARY_CLOUD_NAME"),
 		os.Getenv("CLOUDINARY_API_KEY"),
 		os.Getenv("CLOUDINARY_API_SECRET"),
 	)
+	if err != nil {
+		return "", "", err
+	}
 
 	src, err := file.Open()
 	if err != nil {
@@ -25,10 +28,25 @@ func UploadToCloudinary(file *multipart.FileHeader, folder string) (string, stri
 	uploadResult, err := cld.Upload.Upload(context.Background(), src, uploader.UploadParams{
 		Folder: folder,
 	})
-
 	if err != nil {
 		return "", "", err
 	}
 
 	return uploadResult.SecureURL, uploadResult.PublicID, nil
+}
+
+func DeleteFromCloudinary(publicID string) error {
+	cld, err := cloudinary.NewFromParams(
+		os.Getenv("CLOUDINARY_CLOUD_NAME"),
+		os.Getenv("CLOUDINARY_API_KEY"),
+		os.Getenv("CLOUDINARY_API_SECRET"),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = cld.Upload.Destroy(context.Background(), uploader.DestroyParams{
+		PublicID: publicID,
+	})
+	return err
 }

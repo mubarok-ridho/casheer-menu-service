@@ -1,86 +1,155 @@
 package handlers
 
 import (
-	"casheer-menu-service/internal/models"
+	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
+
+	"github.com/mubarok-ridho/casheer-menu-service/internal/models"
+	"github.com/mubarok-ridho/casheer-menu-service/internal/repository"
+	"github.com/mubarok-ridho/casheer-menu-service/pkg/messaging"
 )
 
 type OrderHandler struct {
-	DB *gorm.DB
+	repo *repository.OrderRepository
+	rmq  *messaging.RabbitMQ
 }
 
-func NewOrderHandler(db *gorm.DB) *OrderHandler {
-	return &OrderHandler{DB: db}
+func NewOrderHandler(repo *repository.OrderRepository) *OrderHandler {
+	rmq, _ := messaging.NewRabbitMQ()
+	return &OrderHandler{
+		repo: repo,
+		rmq:  rmq,
+	}
 }
 
 // Create order
 func (h *OrderHandler) Create(c *fiber.Ctx) error {
 	tenantID := c.Locals("tenant_id").(uint)
 
-	type OrderItem struct {
+	type OrderItemInput struct {
 		MenuID      uint    `json:"menu_id"`
 		VariationID *uint   `json:"variation_id"`
 		Quantity    int     `json:"quantity"`
 		Price       float64 `json:"price"`
-		Note        string  `json:"note"`
+		Notes       string  `json:"notes"`
 	}
 
 	var input struct {
-		Items   []OrderItem `json:"items"`
-		Total   float64     `json:"total"`
-		Payment string      `json:"payment_method"`
+		CustomerName  string           `json:"customer_name"`
+		CustomerPhone string           `json:"customer_phone"`
+		PaymentMethod string           `json:"payment_method"`
+		Notes         string           `json:"notes"`
+		Items         []OrderItemInput `json:"items"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
 	}
 
-	tx := h.DB.Begin()
+	if len(input.Items) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Order must have at least one item"})
+	}
 
-	// Create order
-	order := models.Order{
+	// Generate order number
+	orderNumber := "ORD-" + time.Now().Format("20060102") + "-" + uuid.New().String()[:8]
+
+	order := &models.Order{
 		TenantID:      tenantID,
-		OrderNumber:   generateOrderNumber(),
-		TotalAmount:   input.Total,
-		PaymentMethod: input.Payment,
-		Status:        "completed",
+		OrderNumber:   orderNumber,
+		CustomerName:  input.CustomerName,
+		CustomerPhone: input.CustomerPhone,
+		PaymentMethod: input.PaymentMethod,
+		PaymentStatus: "paid", // Assuming paid immediately
+		OrderStatus:   "completed",
+		Notes:         input.Notes,
+		TotalAmount:   0,
 	}
 
-	if err := tx.Create(&order).Error; err != nil {
-		tx.Rollback()
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Create order items dan update stock
+	// Calculate total and create items
 	for _, item := range input.Items {
-		orderItem := models.OrderItem{
-			OrderID:     order.ID,
+		subtotal := float64(item.Quantity) * item.Price
+		order.TotalAmount += subtotal
+
+		order.Items = append(order.Items, models.OrderItem{
 			MenuID:      item.MenuID,
 			VariationID: item.VariationID,
 			Quantity:    item.Quantity,
 			Price:       item.Price,
-			Note:        item.Note,
-		}
-
-		if err := tx.Create(&orderItem).Error; err != nil {
-			tx.Rollback()
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		// Update stock jika ada variasi
-		if item.VariationID != nil {
-			tx.Model(&models.MenuVariation{}).
-				Where("id = ?", item.VariationID).
-				Update("stock", gorm.Expr("stock - ?", item.Quantity))
-		}
+			Subtotal:    subtotal,
+			Notes:       item.Notes,
+		})
 	}
 
-	tx.Commit()
+	if err := h.repo.Create(order); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
-	// Kirim event ke report service via RabbitMQ untuk update revenue
-	utils.PublishOrderCompleted(order)
+	// Publish event to RabbitMQ for report service
+	if h.rmq != nil {
+		event := messaging.OrderCompletedEvent{
+			OrderID:     order.ID,
+			TenantID:    tenantID,
+			TotalAmount: order.TotalAmount,
+			Date:        time.Now().Format("2006-01-02"),
+		}
+		h.rmq.PublishOrderCompleted(event)
+	}
 
 	return c.Status(201).JSON(order)
+}
+
+// Get all orders
+func (h *OrderHandler) GetAll(c *fiber.Ctx) error {
+	tenantID := c.Locals("tenant_id").(uint)
+
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 20)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	orders, total, err := h.repo.GetAll(tenantID, page, limit, startDate, endDate)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"data":  orders,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// Get order by ID
+func (h *OrderHandler) GetByID(c *fiber.Ctx) error {
+	tenantID := c.Locals("tenant_id").(uint)
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid order ID"})
+	}
+
+	order, err := h.repo.GetByID(uint(id), tenantID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Order not found"})
+	}
+
+	return c.JSON(order)
+}
+
+// Get orders by tenant
+func (h *OrderHandler) GetByTenant(c *fiber.Ctx) error {
+	tenantID := c.Locals("tenant_id").(uint)
+
+	days := c.QueryInt("days", 7)
+
+	orders, err := h.repo.GetByTenant(tenantID, days)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(orders)
 }
