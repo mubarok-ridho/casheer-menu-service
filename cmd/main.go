@@ -16,18 +16,13 @@ import (
 )
 
 func main() {
-	// Load .env
 	if err := godotenv.Load(); err != nil {
 		log.Println("⚠️ Warning: .env file not found, using environment variables")
 	}
-
-	// Initialize Database
 	db, err := database.InitDB()
 	if err != nil {
 		log.Fatal("❌ Failed to connect to database:", err)
 	}
-
-	// Auto Migrate
 	log.Println("📦 Running database migrations...")
 	if err := db.AutoMigrate(
 		&models.Category{},
@@ -41,32 +36,24 @@ func main() {
 	}
 	log.Println("✅ Database migration completed")
 
-	// Initialize repositories
 	menuRepo := repository.NewMenuRepository(db)
 	orderRepo := repository.NewOrderRepository(db)
 	variationRepo := repository.NewVariationRepository(db)
+	categoryRepo := repository.NewCategoryRepository(db)
 
-	// Initialize handlers
-	menuHandler := handlers.NewMenuHandler(menuRepo)
+	menuHandler := handlers.NewMenuHandler(menuRepo, categoryRepo)
 	orderHandler := handlers.NewOrderHandler(orderRepo)
 	variationHandler := handlers.NewVariationHandler(variationRepo)
+	categoryHandler := handlers.NewCategoryHandler(categoryRepo)
 
-	// Initialize Fiber app
-	app := fiber.New(fiber.Config{
-		AppName: os.Getenv("APP_NAME"),
-	})
-
+	app := fiber.New(fiber.Config{AppName: os.Getenv("APP_NAME")})
 	app.Use(cors.New())
+	setupRoutes(app, menuHandler, orderHandler, variationHandler, categoryHandler)
 
-	// Setup routes
-	setupRoutes(app, menuHandler, orderHandler, variationHandler)
-
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3002"
 	}
-
 	log.Printf("🚀 Menu Service starting on port %s", port)
 	log.Fatal(app.Listen(":" + port))
 }
@@ -76,13 +63,13 @@ func setupRoutes(
 	menuHandler *handlers.MenuHandler,
 	orderHandler *handlers.OrderHandler,
 	variationHandler *handlers.VariationHandler,
+	categoryHandler *handlers.CategoryHandler,
 ) {
-	// Public routes (if any)
+	public := app.Group("/public")
+	public.Get("/menu/:tenantId", menuHandler.GetPublicMenu)
 
-	// Protected routes (require JWT)
 	api := app.Group("/api/v1", middleware.AuthMiddleware())
 
-	// Menu routes
 	menuRoutes := api.Group("/menus")
 	menuRoutes.Post("/", menuHandler.Create)
 	menuRoutes.Get("/", menuHandler.GetAll)
@@ -92,18 +79,25 @@ func setupRoutes(
 	menuRoutes.Delete("/:id", menuHandler.Delete)
 	menuRoutes.Post("/:id/images", menuHandler.UploadImage)
 	menuRoutes.Delete("/:id/images/:imageId", menuHandler.DeleteImage)
+	menuRoutes.Patch("/:id/availability", menuHandler.ToggleAvailability)
 
-	// Variation routes
 	variationRoutes := api.Group("/variations")
 	variationRoutes.Post("/", variationHandler.Create)
 	variationRoutes.Put("/:id", variationHandler.Update)
 	variationRoutes.Delete("/:id", variationHandler.Delete)
 	variationRoutes.Patch("/:id/stock", variationHandler.UpdateStock)
 
-	// Order routes
+	categoryRoutes := api.Group("/categories")
+	categoryRoutes.Get("/", categoryHandler.GetAll)
+	categoryRoutes.Post("/", categoryHandler.Create)
+	categoryRoutes.Put("/:id", categoryHandler.Update)
+	categoryRoutes.Delete("/:id", categoryHandler.Delete)
+
 	orderRoutes := api.Group("/orders")
 	orderRoutes.Post("/", orderHandler.Create)
 	orderRoutes.Get("/", orderHandler.GetAll)
 	orderRoutes.Get("/:id", orderHandler.GetByID)
 	orderRoutes.Get("/tenant/:tenantId", orderHandler.GetByTenant)
+	orderRoutes.Delete("/cleanup", orderHandler.DeleteOldOrders)
+	orderRoutes.Delete("/cleanup", orderHandler.DeleteOldOrders)
 }

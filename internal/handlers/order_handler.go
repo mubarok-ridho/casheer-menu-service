@@ -19,13 +19,9 @@ type OrderHandler struct {
 
 func NewOrderHandler(repo *repository.OrderRepository) *OrderHandler {
 	rmq, _ := messaging.NewRabbitMQ()
-	return &OrderHandler{
-		repo: repo,
-		rmq:  rmq,
-	}
+	return &OrderHandler{repo: repo, rmq: rmq}
 }
 
-// Create order
 func (h *OrderHandler) Create(c *fiber.Ctx) error {
 	tenantID := c.Locals("tenant_id").(uint)
 
@@ -36,7 +32,6 @@ func (h *OrderHandler) Create(c *fiber.Ctx) error {
 		Price       float64 `json:"price"`
 		Notes       string  `json:"notes"`
 	}
-
 	var input struct {
 		CustomerName  string           `json:"customer_name"`
 		CustomerPhone string           `json:"customer_phone"`
@@ -44,35 +39,28 @@ func (h *OrderHandler) Create(c *fiber.Ctx) error {
 		Notes         string           `json:"notes"`
 		Items         []OrderItemInput `json:"items"`
 	}
-
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
 	}
-
 	if len(input.Items) == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Order must have at least one item"})
 	}
 
-	// Generate order number
 	orderNumber := "ORD-" + time.Now().Format("20060102") + "-" + uuid.New().String()[:8]
-
 	order := &models.Order{
 		TenantID:      tenantID,
 		OrderNumber:   orderNumber,
 		CustomerName:  input.CustomerName,
 		CustomerPhone: input.CustomerPhone,
 		PaymentMethod: input.PaymentMethod,
-		PaymentStatus: "paid", // Assuming paid immediately
+		PaymentStatus: "paid",
 		OrderStatus:   "completed",
 		Notes:         input.Notes,
 		TotalAmount:   0,
 	}
-
-	// Calculate total and create items
 	for _, item := range input.Items {
 		subtotal := float64(item.Quantity) * item.Price
 		order.TotalAmount += subtotal
-
 		order.Items = append(order.Items, models.OrderItem{
 			MenuID:      item.MenuID,
 			VariationID: item.VariationID,
@@ -82,12 +70,9 @@ func (h *OrderHandler) Create(c *fiber.Ctx) error {
 			Notes:       item.Notes,
 		})
 	}
-
 	if err := h.repo.Create(order); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	// Publish event to RabbitMQ for report service
 	if h.rmq != nil {
 		event := messaging.OrderCompletedEvent{
 			OrderID:     order.ID,
@@ -97,59 +82,56 @@ func (h *OrderHandler) Create(c *fiber.Ctx) error {
 		}
 		h.rmq.PublishOrderCompleted(event)
 	}
-
 	return c.Status(201).JSON(order)
 }
 
-// Get all orders
 func (h *OrderHandler) GetAll(c *fiber.Ctx) error {
 	tenantID := c.Locals("tenant_id").(uint)
-
-	page := c.QueryInt("page", 1)
-	limit := c.QueryInt("limit", 20)
+	page      := c.QueryInt("page", 1)
+	limit     := c.QueryInt("limit", 20)
 	startDate := c.Query("start_date")
-	endDate := c.Query("end_date")
+	endDate   := c.Query("end_date")
 
 	orders, total, err := h.repo.GetAll(tenantID, page, limit, startDate, endDate)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	return c.JSON(fiber.Map{
-		"data":  orders,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	return c.JSON(fiber.Map{"data": orders, "total": total, "page": page, "limit": limit})
 }
 
-// Get order by ID
 func (h *OrderHandler) GetByID(c *fiber.Ctx) error {
 	tenantID := c.Locals("tenant_id").(uint)
-
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	id, err  := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid order ID"})
 	}
-
 	order, err := h.repo.GetByID(uint(id), tenantID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Order not found"})
 	}
-
 	return c.JSON(order)
 }
 
-// Get orders by tenant
 func (h *OrderHandler) GetByTenant(c *fiber.Ctx) error {
 	tenantID := c.Locals("tenant_id").(uint)
-
-	days := c.QueryInt("days", 7)
-
+	days     := c.QueryInt("days", 7)
 	orders, err := h.repo.GetByTenant(tenantID, days)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-
 	return c.JSON(orders)
+}
+
+// DeleteOldOrders — cleanup orders older than X days
+func (h *OrderHandler) DeleteOldOrders(c *fiber.Ctx) error {
+	tenantID := c.Locals("tenant_id").(uint)
+	days     := c.QueryInt("days", 30)
+	if days < 7 {
+		return c.Status(400).JSON(fiber.Map{"error": "Minimum 7 hari"})
+	}
+	deleted, err := h.repo.DeleteOlderThan(tenantID, days)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Cleanup berhasil", "deleted": deleted, "days": days})
 }

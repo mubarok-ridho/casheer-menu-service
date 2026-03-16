@@ -12,6 +12,7 @@ import (
 )
 
 func InitDB() (*gorm.DB, error) {
+
 	host := getEnv("DB_HOST", "localhost")
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "postgres")
@@ -20,12 +21,15 @@ func InitDB() (*gorm.DB, error) {
 	sslmode := getEnv("DB_SSLMODE", "disable")
 	timezone := getEnv("DB_TIMEZONE", "Asia/Jakarta")
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
-		host, port, user, password, dbname, sslmode, timezone)
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
+		host, port, user, password, dbname, sslmode, timezone,
+	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
@@ -36,10 +40,11 @@ func InitDB() (*gorm.DB, error) {
 	}
 
 	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetMaxOpenConns(50)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	log.Printf("✅ Connected to database: %s", dbname)
+
 	return db, nil
 }
 
