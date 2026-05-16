@@ -13,15 +13,16 @@ type Order struct {
 	CustomerName  string         `json:"customer_name"`
 	CustomerPhone string         `json:"customer_phone"`
 	TotalAmount   float64        `json:"total_amount" gorm:"not null"`
-	PaymentMethod string         `json:"payment_method"`                          // cash, qris, transfer
-	PaymentStatus string         `json:"payment_status" gorm:"default:'pending'"` // pending, paid, failed
-	OrderStatus   string         `json:"order_status" gorm:"default:'pending'"`   // pending, processing, completed, cancelled
-	Notes         string         `json:"notes"`
+	PaymentMethod string         `json:"payment_method"`
+	PaymentStatus string         `json:"payment_status" gorm:"default:'pending'"`
+	OrderStatus   string         `json:"order_status" gorm:"default:'pending'"`
+	Notes          string         `json:"notes"`
+	DiscountType   string         `json:"discount_type"`
+	DiscountAmount float64        `json:"discount_amount"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// Relations
 	Items []OrderItem `json:"items,omitempty"`
 }
 
@@ -30,14 +31,14 @@ type OrderItem struct {
 	OrderID     uint      `json:"order_id" gorm:"not null;index"`
 	MenuID      uint      `json:"menu_id" gorm:"not null"`
 	VariationID *uint     `json:"variation_id"`
+	PromoID     *uint     `json:"promo_id"`
 	Quantity    int       `json:"quantity" gorm:"not null"`
-	Price       float64   `json:"price" gorm:"not null"` // Price at time of order
+	Price       float64   `json:"price" gorm:"not null"`
 	Subtotal    float64   `json:"subtotal" gorm:"not null"`
 	Notes       string    `json:"notes"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
-	// Relations
 	Order     Order         `json:"order,omitempty"`
 	Menu      Menu          `json:"menu,omitempty"`
 	Variation MenuVariation `json:"variation,omitempty"`

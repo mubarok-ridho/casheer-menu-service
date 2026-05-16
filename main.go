@@ -42,20 +42,20 @@ func main() {
 	}
 	log.Println("✅ Database migration completed")
 
-	menuRepo     := repository.NewMenuRepository(db)
-	orderRepo    := repository.NewOrderRepository(db)
+	menuRepo := repository.NewMenuRepository(db)
+	orderRepo := repository.NewOrderRepository(db)
 	variationRepo := repository.NewVariationRepository(db)
 	categoryRepo := repository.NewCategoryRepository(db)
-	promoRepo    := repository.NewPromoRepository(db)
-	ingRepo      := repository.NewIngredientRepository(db)
+	promoRepo := repository.NewPromoRepository(db)
+	ingRepo := repository.NewIngredientRepository(db)
 
-	menuHandler      := handlers.NewMenuHandler(menuRepo, categoryRepo)
-	orderHandler     := handlers.NewOrderHandler(orderRepo, ingRepo)
+	menuHandler := handlers.NewMenuHandler(menuRepo, categoryRepo)
+	orderHandler := handlers.NewOrderHandler(orderRepo, ingRepo)
 	variationHandler := handlers.NewVariationHandler(variationRepo)
-	categoryHandler  := handlers.NewCategoryHandler(categoryRepo)
-	promoHandler     := handlers.NewPromoHandler(promoRepo)
-	ingHandler       := handlers.NewIngredientHandler(ingRepo)
-	marginsHandler   := handlers.NewMarginsHandler(db, ingRepo)
+	categoryHandler := handlers.NewCategoryHandler(categoryRepo)
+	promoHandler := handlers.NewPromoHandler(promoRepo)
+	ingHandler := handlers.NewIngredientHandler(ingRepo)
+	marginsHandler := handlers.NewMarginsHandler(db, ingRepo)
 
 	app := fiber.New(fiber.Config{AppName: os.Getenv("APP_NAME")})
 	app.Use(cors.New())
@@ -71,13 +71,13 @@ func main() {
 
 func setupRoutes(
 	app *fiber.App,
-	menuHandler      *handlers.MenuHandler,
-	orderHandler     *handlers.OrderHandler,
+	menuHandler *handlers.MenuHandler,
+	orderHandler *handlers.OrderHandler,
 	variationHandler *handlers.VariationHandler,
-	categoryHandler  *handlers.CategoryHandler,
-	promoHandler     *handlers.PromoHandler,
-	ingHandler       *handlers.IngredientHandler,
-	marginsHandler   *handlers.MarginsHandler,
+	categoryHandler *handlers.CategoryHandler,
+	promoHandler *handlers.PromoHandler,
+	ingHandler *handlers.IngredientHandler,
+	marginsHandler *handlers.MarginsHandler,
 ) {
 	public := app.Group("/public")
 	public.Get("/menu/:tenantId", menuHandler.GetPublicMenu)
@@ -95,6 +95,7 @@ func setupRoutes(
 	menuRoutes.Post("/:id/images", menuHandler.UploadImage)
 	menuRoutes.Delete("/:id/images/:imageId", menuHandler.DeleteImage)
 	menuRoutes.Patch("/:id/availability", menuHandler.ToggleAvailability)
+	// Ingredients per menu
 	menuRoutes.Get("/:id/ingredients", ingHandler.GetMenuIngredients)
 	menuRoutes.Put("/:id/ingredients", ingHandler.SetMenuIngredients)
 
@@ -103,6 +104,8 @@ func setupRoutes(
 	variationRoutes.Put("/:id", variationHandler.Update)
 	variationRoutes.Delete("/:id", variationHandler.Delete)
 	variationRoutes.Patch("/:id/stock", variationHandler.UpdateStock)
+	variationRoutes.Get("/:id/ingredients", ingHandler.GetVariationIngredients)
+	variationRoutes.Put("/:id/ingredients", ingHandler.SetVariationIngredients)
 	variationRoutes.Get("/:id/ingredients", ingHandler.GetVariationIngredients)
 	variationRoutes.Put("/:id/ingredients", ingHandler.SetVariationIngredients)
 
@@ -126,6 +129,7 @@ func setupRoutes(
 	promoRoutes.Delete("/:id", promoHandler.Delete)
 	promoRoutes.Post("/upload-image", promoHandler.UploadImage)
 
+	// Ingredients (bahan baku)
 	ingRoutes := api.Group("/ingredients")
 	ingRoutes.Get("/", ingHandler.GetAll)
 	ingRoutes.Get("/low-stock", ingHandler.GetLowStock)
@@ -133,6 +137,7 @@ func setupRoutes(
 	ingRoutes.Put("/:id", ingHandler.Update)
 	ingRoutes.Delete("/:id", ingHandler.Delete)
 
+	// Margins
 	marginsRoutes := api.Group("/margins")
 	marginsRoutes.Get("/", marginsHandler.GetSummary)
 	marginsRoutes.Get("/menu-breakdown", marginsHandler.GetMenuBreakdown)

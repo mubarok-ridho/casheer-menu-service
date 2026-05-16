@@ -282,17 +282,33 @@ func (h *MenuHandler) GetPublicMenu(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid tenant ID"})
 	}
 	categoryID := c.QueryInt("category_id", 0)
+
 	menus, err := h.repo.GetPublicMenus(uint(tenantID), categoryID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
 	categories, err := h.categoryRepo.GetByTenant(uint(tenantID))
 	if err != nil {
 		categories = []models.Category{}
 	}
+
+	// Ambil info tenant (nama + logo) dari tabel tenants — DB sama
+	type TenantInfo struct {
+		StoreName    string `json:"store_name"`
+		LogoURL      string `json:"logo_url"`
+		StoreAddress string `json:"store_address"`
+	}
+	var tenant TenantInfo
+	h.repo.DB.Table("tenants").
+		Select("store_name, logo_url, store_address").
+		Where("id = ?", tenantID).
+		First(&tenant)
+
 	return c.JSON(fiber.Map{
 		"menus":      menus,
 		"categories": categories,
 		"tenant_id":  tenantID,
+		"tenant":     tenant,
 	})
 }
